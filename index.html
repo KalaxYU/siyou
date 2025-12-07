@@ -1,3 +1,22 @@
+// ===========================
+    // ★★★ 强制清除 Hexo 缓存脚本 ★★★
+    // ===========================
+    if ('serviceWorker' in navigator) {
+        navigator.serviceWorker.getRegistrations().then(function(registrations) {
+            for(let registration of registrations) {
+                // 注销掉所有接管这个页面的 Service Worker
+                registration.unregister();
+                console.log("Service Worker Unregistered");
+            }
+        });
+        // 强制刷新缓存
+        if(!localStorage.getItem('force_reloaded')) {
+             localStorage.setItem('force_reloaded', 'true');
+             window.location.reload(true);
+        }
+    }
+
+
 <!DOCTYPE html>
 <html lang="zh-CN">
 <head>
@@ -310,3 +329,4 @@
 </script>
 </body>
 </html>
+
