@@ -1,0 +1,312 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Math Runner Adventure</title>
+    <style>
+        /* 游戏整体样式设置 */
+        body {
+            margin: 0;
+            padding: 0;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            background-color: #222; /* 深色背景，突出游戏 */
+            font-family: 'Courier New', Courier, monospace; /* 复古等宽字体 */
+            overflow: hidden; /* 防止滚动条 */
+        }
+        #gameCanvas {
+            border: 4px solid #555;
+            background-color: #000; /* 游戏画布黑色背景 */
+            /* 强制像素化显示，关键 CSS */
+            image-rendering: pixelated; 
+            image-rendering: -moz-crisp-edges;
+            image-rendering: crisp-edges;
+            box-shadow: 0 0 20px rgba(0, 255, 255, 0.2);
+        }
+    </style>
+</head>
+<body>
+
+<canvas id="gameCanvas"></canvas>
+
+<script>
+    // ===========================
+    // 游戏配置区 (你可以修改这里!)
+    // ===========================
+    const TARGET_SCORE = 500; // 达到这个分数触发彩蛋
+    
+    // 彩蛋信息：你想对学长说的话。支持 HTML 标签，比如换行用 <br>
+    const SECRET_MESSAGE = "学长，跑完这 800 米，<br>能邀请你一起去喝杯精酿吗？<br><br>—— 来自一个刚经历体测的学妹";
+    
+    // 背景飘过的硬核公式
+    const MATH_EQUATIONS = [
+        "e^(iπ) + 1 = 0", // 欧拉公式
+        "iℏ∂ψ/∂t = Ĥψ",   // 薛定谔方程
+        "∇·E = ρ/ε₀",     // 麦克斯韦方程 - 高斯定律
+        "E = mc²",
+        "∫ e^x dx = e^x",
+        "F = ma",
+        "S = k ln Ω"      // 玻尔兹曼熵公式
+    ];
+
+    // ===========================
+    // 游戏核心代码 (不懂可以不用动)
+    // ===========================
+    
+    const canvas = document.getElementById('gameCanvas');
+    const ctx = canvas.getContext('2d');
+
+    // 设置画布分辨率（低分辨率以模拟像素感）
+    const GAME_WIDTH = 640;
+    const GAME_HEIGHT = 360;
+    canvas.width = GAME_WIDTH;
+    canvas.height = GAME_HEIGHT;
+    
+    // 根据窗口大小缩放画布显示，保持比例
+    function resizeCanvas() {
+        let scale = Math.min(window.innerWidth / GAME_WIDTH, window.innerHeight / GAME_HEIGHT);
+        canvas.style.width = (GAME_WIDTH * scale * 0.9) + 'px';
+        canvas.style.height = (GAME_HEIGHT * scale * 0.9) + 'px';
+    }
+    window.addEventListener('resize', resizeCanvas);
+    resizeCanvas();
+
+    // 关闭抗锯齿，确保像素清晰
+    ctx.imageSmoothingEnabled = false;
+
+    // 游戏变量
+    let gameRunning = false;
+    let score = 0;
+    let frameCount = 0;
+    let gameSpeed = 4;
+    let obstacles = [];
+    let bgElements = [];
+    let gameState = 'START'; // 'START', 'PLAYING', 'GAMEOVER', 'WIN'
+
+    // 主角对象 (Player)
+    const player = {
+        x: 50,
+        y: GAME_HEIGHT - 60,
+        width: 24, // 像素块大小
+        height: 24,
+        color: '#00E5FF', // 霓虹蓝
+        velocityY: 0,
+        gravity: 0.8,
+        jumpStrength: -13,
+        grounded: false,
+        draw: function() {
+            ctx.fillStyle = this.color;
+            // 绘制一个简单的像素小人 (用几个方块模拟)
+            ctx.fillRect(this.x, this.y, this.width, this.height); // 身体
+            ctx.fillStyle = '#FFFFFF';
+            ctx.fillRect(this.x + 16, this.y + 4, 6, 6); // 眼睛
+        },
+        update: function() {
+            this.velocityY += this.gravity;
+            this.y += this.velocityY;
+            // 地面碰撞检测
+            if (this.y + this.height > GAME_HEIGHT - 20) {
+                this.y = GAME_HEIGHT - 20 - this.height;
+                this.velocityY = 0;
+                this.grounded = true;
+            } else {
+                this.grounded = false;
+            }
+        },
+        jump: function() {
+            if (this.grounded) {
+                this.velocityY = this.jumpStrength;
+                this.grounded = false;
+            }
+        }
+    };
+
+    // 背景公式对象
+    class BgEquation {
+        constructor() {
+            this.text = MATH_EQUATIONS[Math.floor(Math.random() * MATH_EQUATIONS.length)];
+            this.x = GAME_WIDTH;
+            this.y = Math.random() * (GAME_HEIGHT - 100) + 50;
+            this.speed = (Math.random() * 1 + 0.5);
+            this.opacity = Math.random() * 0.3 + 0.1;
+            this.size = Math.floor(Math.random() * 10 + 10);
+        }
+        update() {
+            this.x -= this.speed;
+        }
+        draw() {
+            ctx.fillStyle = `rgba(255, 255, 255, ${this.opacity})`;
+            ctx.font = `${this.size}px 'Courier New'`;
+            ctx.fillText(this.text, this.x, this.y);
+        }
+    }
+
+    // 障碍物对象
+    class Obstacle {
+        constructor() {
+            this.width = Math.random() * 20 + 20;
+            this.height = Math.random() * 30 + 30;
+            this.x = GAME_WIDTH;
+            this.y = GAME_HEIGHT - 20 - this.height;
+            this.color = '#FF3333'; // 霓虹红
+        }
+        update() {
+            this.x -= gameSpeed;
+        }
+        draw() {
+            ctx.fillStyle = this.color;
+            // 绘制像素尖刺
+            ctx.beginPath();
+            ctx.moveTo(this.x, this.y + this.height);
+            ctx.lineTo(this.x + this.width / 2, this.y);
+            ctx.lineTo(this.x + this.width, this.y + this.height);
+            ctx.fill();
+            // ctx.fillRect(this.x, this.y, this.width, this.height); // 如果想要方块障碍解开这个注释
+        }
+    }
+
+    // 输入监听 (空格或向上箭头跳跃，任意键开始)
+    document.addEventListener('keydown', function(e) {
+        if (e.code === 'Space' || e.code === 'ArrowUp') {
+            if (gameState === 'PLAYING') player.jump();
+        }
+        if (gameState === 'START' || gameState === 'GAMEOVER') {
+            resetGame();
+            gameState = 'PLAYING';
+            gameLoop();
+        }
+    });
+    // 点击屏幕也可以跳跃（适配手机）
+    canvas.addEventListener('touchstart', function(e){
+         if (gameState === 'PLAYING') player.jump();
+         if (gameState === 'START' || gameState === 'GAMEOVER') {
+            resetGame();
+            gameState = 'PLAYING';
+            gameLoop();
+        }
+         e.preventDefault();
+    }, {passive: false});
+
+
+    function resetGame() {
+        player.y = GAME_HEIGHT - 60;
+        player.velocityY = 0;
+        obstacles = [];
+        bgElements = [];
+        score = 0;
+        gameSpeed = 4;
+        frameCount = 0;
+    }
+
+    // 碰撞检测 (简单的矩形碰撞)
+    function checkCollision(rect1, rect2) {
+        return (
+            rect1.x < rect2.x + rect2.width &&
+            rect1.x + rect1.width > rect2.x &&
+            rect1.y < rect2.y + rect2.height &&
+            rect1.y + rect1.height > rect2.y
+        );
+    }
+
+    // 绘制UI和文字
+    function drawUI(text, subText, isWinMsg) {
+        ctx.fillStyle = 'rgba(0,0,0,0.7)';
+        ctx.fillRect(0, 0, GAME_WIDTH, GAME_HEIGHT);
+        
+        ctx.textAlign = 'center';
+        ctx.fillStyle = '#FFFFFF';
+
+        if (isWinMsg) {
+            // 彩蛋消息特殊样式
+            ctx.font = '20px Courier New';
+            let lines = text.split('<br>');
+            for(let i=0; i<lines.length; i++) {
+                ctx.fillText(lines[i], GAME_WIDTH / 2, GAME_HEIGHT / 2 - 40 + i*25);
+            }
+        } else {
+            // 普通开始/结束界面
+            ctx.font = '40px Courier New';
+            ctx.fillText(text, GAME_WIDTH / 2, GAME_HEIGHT / 2);
+            ctx.font = '20px Courier New';
+            ctx.fillText(subText, GAME_WIDTH / 2, GAME_HEIGHT / 2 + 40);
+        }
+    }
+
+    // --- 游戏主循环 ---
+    function gameLoop() {
+        if (gameState !== 'PLAYING') return;
+
+        ctx.clearRect(0, 0, GAME_WIDTH, GAME_HEIGHT);
+        frameCount++;
+        score++;
+
+        // 1. 绘制地面和背景
+        // 背景公式生成
+        if (frameCount % 120 === 0) {
+            bgElements.push(new BgEquation());
+        }
+        bgElements.forEach((bg, index) => {
+            bg.update();
+            bg.draw();
+            if (bg.x + 200 < 0) bgElements.splice(index, 1);
+        });
+
+        ctx.fillStyle = '#333'; // 地面颜色
+        ctx.fillRect(0, GAME_HEIGHT - 20, GAME_WIDTH, 20);
+
+
+        // 2. 更新和绘制主角
+        player.update();
+        player.draw();
+
+        // 3. 障碍物生成与管理
+        if (frameCount % 100 === 0) { // 每隔一段时间生成障碍
+            obstacles.push(new Obstacle());
+            // 缓慢增加游戏速度
+            if (gameSpeed < 10 && frameCount % 500 === 0) gameSpeed += 0.5;
+        }
+
+        obstacles.forEach((obs, index) => {
+            obs.update();
+            obs.draw();
+
+            // 碰撞检测
+            // 这里把主角的碰撞箱稍微缩小一点，提升游戏体验(手感)
+            let playerHitBox = {x: player.x+4, y: player.y+4, width: player.width-8, height: player.height-8};
+            if (checkCollision(playerHitBox, obs)) {
+                gameState = 'GAMEOVER';
+                drawUI('GAME OVER', 'Score: ' + score + ' | Press Any Key');
+            }
+
+            // 移除超出屏幕的障碍
+            if (obs.x + obs.width < 0) {
+                obstacles.splice(index, 1);
+            }
+        });
+
+        // 4. 绘制分数HUD
+        ctx.fillStyle = '#FFF';
+        ctx.font = '20px Courier New';
+        ctx.textAlign = 'left';
+        ctx.fillText('SCORE: ' + score, 20, 30);
+
+        // 5. 检查胜利条件 (彩蛋触发)
+        if (score >= TARGET_SCORE) {
+            gameState = 'WIN';
+            drawUI(SECRET_MESSAGE, '', true);
+        }
+
+        if (gameState === 'PLAYING') {
+            requestAnimationFrame(gameLoop);
+        }
+    }
+
+    // 游戏入口画面
+    drawUI('MATH RUNNER', 'Press Space or Tap to Start', false);
+
+</script>
+</body>
+</html>
